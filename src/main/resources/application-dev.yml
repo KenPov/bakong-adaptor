@@ -1,0 +1,24 @@
+# DEV Environment Configuration
+logging:
+  level:
+    root: INFO
+    com.sbibank.openbanking: DEBUG
+    org.springframework.web: DEBUG
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,env
+  endpoint:
+    health:
+      show-details: always
+
+bakong:
+  ob-client:
+    connect-timeout: 10s
+    read-timeout: 20s
+
+ciftp:
+  connect-timeout: 10s
+  read-timeout: 25s

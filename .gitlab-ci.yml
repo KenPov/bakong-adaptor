@@ -1,0 +1,95 @@
+# ==============================================================================
+# SBI Bank - GitLab CI/CD Pipeline for bakong-adaptor (Nexus Registry)
+# ==============================================================================
+
+stages:
+  - test
+  - build
+  - deploy
+
+variables:
+  MAVEN_OPTS: "-Dmaven.repo.local=.m2/repository"
+  # Nexus Registry Configuration (Can be customized via GitLab CI/CD Variables)
+  NEXUS_REGISTRY: "nexus.sbibank.com"
+  NEXUS_IMAGE_BASE: "nexus.sbibank.com/sbicore/bakong-adaptor"
+  IMAGE_TAG: "$NEXUS_IMAGE_BASE:$CI_COMMIT_SHORT_SHA"
+  IMAGE_LATEST: "$NEXUS_IMAGE_BASE:uat-latest"
+  # Target server deployment path
+  DEPLOY_DIR: "/home/optadmin/docker_image/sbi-devops"
+
+cache:
+  paths:
+    - .m2/repository
+
+# ------------------------------------------------------------------------------
+# 1. Test Stage: Run Maven Unit & Integration Tests
+# ------------------------------------------------------------------------------
+test:
+  stage: test
+  image: maven:3.9-eclipse-temurin-21
+  script:
+    - echo "=== Running Unit & Integration Tests ==="
+    - mvn clean test
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "uat" || $CI_COMMIT_BRANCH == "development"'
+
+# ------------------------------------------------------------------------------
+# 2. Build Stage: Build & Push Docker Image to Nexus
+# ------------------------------------------------------------------------------
+build:
+  stage: build
+  image: docker:24.0.5
+  services:
+    - docker:24.0.5-dind
+  before_script:
+    - echo "=== Logging in to Nexus Container Registry ($NEXUS_REGISTRY) ==="
+    - echo "$NEXUS_PASSWORD" | docker login -u "$NEXUS_USER" --password-stdin "$NEXUS_REGISTRY"
+  script:
+    - echo "=== Building Docker image with Java 25 Runtime ==="
+    - docker build -t "$IMAGE_TAG" -t "$IMAGE_LATEST" .
+    - echo "=== Pushing Docker images to Nexus ==="
+    - docker push "$IMAGE_TAG"
+    - docker push "$IMAGE_LATEST"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "uat"'
+
+# ------------------------------------------------------------------------------
+# 3. Deploy Stage: Deploy to Linux UAT Server via SSH
+# ------------------------------------------------------------------------------
+deploy:uat:
+  stage: deploy
+  image: alpine:latest
+  environment:
+    name: uat
+    url: http://$UAT_SERVER_HOST:8080/actuator/health/liveness
+  before_script:
+    - echo "=== Setting up SSH Agent for Server Deployment ==="
+    - apk add --no-cache openssh-client bash
+    - eval $(ssh-agent -s)
+    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    - '[[ -f /.dockerenv ]] && echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config'
+  script:
+    - echo "=== Triggering UAT Deployment on Server $UAT_SERVER_HOST ==="
+    - |
+      ssh ${UAT_SERVER_USER:-optadmin}@${UAT_SERVER_HOST} "
+        set -e
+        echo '--- Logging in to Nexus Container Registry on Server ---'
+        echo '$NEXUS_PASSWORD' | docker login -u '$NEXUS_USER' --password-stdin '$NEXUS_REGISTRY'
+        
+        echo '--- Entering Deployment Directory ---'
+        cd $DEPLOY_DIR
+        
+        echo '--- Pulling Latest Image from Nexus: $IMAGE_TAG ---'
+        docker pull $IMAGE_TAG
+        
+        echo '--- Executing deploy-uat.sh with Vault Sync ---'
+        chmod +x scripts/deploy-uat.sh
+        export BAKONG_ADAPTOR_IMAGE='$IMAGE_TAG'
+        ./scripts/deploy-uat.sh bakong-adaptor '$IMAGE_TAG'
+      "
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "uat"'
+      when: on_success

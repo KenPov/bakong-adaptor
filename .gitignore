@@ -1,0 +1,13 @@
+target/
+.env
+*.local.yml
+*.local.yaml
+.idea/
+*.iml
+.vscode/
+.DS_Store
+
+# Container image exports
+*.tar
+*.bzip2
+*.gz

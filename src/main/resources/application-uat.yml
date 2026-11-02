@@ -1,0 +1,28 @@
+# UAT / SIT Environment Configuration
+logging:
+  level:
+    root: INFO
+    com.sbibank.openbanking: INFO
+    org.springframework.web: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} [traceId=%X{traceId:-} spanId=%X{spanId:-}] - %msg%n"
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized
+      probes:
+        enabled: true
+
+bakong:
+  ob-client:
+    connect-timeout: 5s
+    read-timeout: 15s
+
+ciftp:
+  connect-timeout: 5s
+  read-timeout: 15s

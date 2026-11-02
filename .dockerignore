@@ -1,0 +1,11 @@
+target/
+.git/
+.env
+*.local.yml
+*.local.yaml
+.idea/
+*.iml
+.vscode/
+.DS_Store
+README.md
+RUNBOOK.md
